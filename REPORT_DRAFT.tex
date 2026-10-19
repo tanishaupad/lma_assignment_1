@@ -1,0 +1,83 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\hypersetup{colorlinks=true,urlcolor=blue}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setlist{nosep}
+\title{Magic Rules Question Answering: Does Reranking Help?}
+\author{}
+\date{}
+\begin{document}
+\maketitle
+\vspace{-2.5em}
+
+\section*{What I tested}
+I built a question-answering system using the September 25, 2026 edition of the \emph{Magic: The Gathering Comprehensive Rules}. I compared two ways of choosing passages for an answer. The baseline takes the top three passages from vector search. The second method reranks the same top ten candidates and then takes its top three. Both methods send their passages to the same Gemini model with the same prompt and settings. Passage selection is the main difference between the two runs.
+
+\section*{Architecture comparison}
+I extracted the numbered rules and glossary from the 312-page PDF, leaving out the introduction, contents, and credits. I kept rule numbers and PDF page numbers so that I could check each answer. Rules were grouped within their sections into passages small enough for both retrieval models. This produced 707 passages: 598 rules passages and 109 glossary passages. The notebook checks that every numbered rule it parsed appears in at least one passage.
+
+I embedded the passages with \texttt{BAAI/bge-base-en-v1.5} and stored their vectors in a FAISS index. This Bi-Encoder processes the question and each passage independently. It compares their vectors with cosine similarity, implemented here as inner product on normalized vectors. Passage vectors are computed once, which makes the initial search fast. For each question, it returns ten candidates.
+
+The baseline sends the first three candidates to Gemini. The advanced path scores all ten question--passage pairs with \texttt{cross-encoder/ms-marco-MiniLM-L6-v2} and sends its top three to Gemini. A Cross-Encoder reads the question and passage together. Its joint attention can compare their words and conditions directly, but it has to run on every pair. Both paths use \texttt{gemini-3.5-flash-lite}. The prompt tells Gemini to answer only from the supplied passages and to say when they are insufficient.
+
+\section*{Failure cases and rank shifts}
+I ran four starter questions and checked the target rules against the PDF. I counted a retrieval hit only when \emph{all} required rules appeared in the top three. The baseline had one hit out of four; reranking had three out of four.
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X p{2.5cm} >{\raggedright\arraybackslash}p{5.1cm}@{}}
+\toprule
+Question & Required-rule rank: baseline $\rightarrow$ reranked & Answer comparison \\
+\midrule
+Additional land despite a ``can't play lands'' effect & 5 $\rightarrow$ 2 & Baseline abstained; reranked answer correctly said no. \\
+Card text versus a conflicting general rule & 1 $\rightarrow$ 1 & Both answers correctly said card text takes precedence. \\
+Activated versus triggered abilities & Rule 602.1 missing from top ten & Baseline abstained; reranked answer explained only triggered abilities. \\
+Replacement versus prevention effects & Last required rule: 6 $\rightarrow$ 3 & Both gave the basic distinction; reranked answer had more direct rule support and detail. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{Failure case 1: negation and constraints.} The baseline's top three included land-play rules but missed the rule that resolves a conflict with a ``can't'' effect. Answer 1 was ``The supplied passages are insufficient.'' It did not hallucinate a rule, but it left the question unanswered. Reranking moved rule 101.2 from rank 5 to rank 2. Answer 2 said that the ``can't play lands'' effect wins. Rule 101.2 on PDF page 7 states this and even gives an additional-land example.
+
+\textbf{Failure case 2: evidence spread across rule sections.} The replacement/prevention question needs rules 614.1 and 615.1. The baseline put rule 614.1 at rank 3, but rule 615.1 at rank 6, outside the passages Gemini received. Reranking moved them to ranks 2 and 3. Answer 2 cited both rules and added wording and timing details. Answer 1 used rule 614.1 and a glossary definition of prevention effects, so it already gave the essential distinction. It did not hallucinate or misstate the core rule. This is a retrieval failure that reranking fixed, but it is not a clear change from an incorrect answer to a correct one.
+
+The activated-versus-triggered question shows a different limit. Rule 602.1, which defines activated abilities, was absent from the vector search's top ten. The Cross-Encoder moved rule 603.1 about triggered abilities to first place but could not add the missing rule. Answer 2 was therefore only partial. Reranking cannot repair a candidate set that lacks necessary evidence.
+
+\section*{Latency profiling}
+These times come from one notebook run, in seconds. Baseline time includes question embedding and FAISS search. Extra reranking time scores the ten pairs with the Cross-Encoder. Advanced time is the sum. Model loading, index building, and Gemini answer generation are excluded.
+
+\begin{center}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Question & Baseline & Extra reranking & Advanced total \\
+\midrule
+Additional land & 0.084 & 0.154 & 0.238 \\
+Card text versus general rule & 0.110 & 0.150 & 0.260 \\
+Activated versus triggered ability & 0.109 & 0.135 & 0.245 \\
+Replacement versus prevention & 0.107 & 0.145 & 0.252 \\
+\midrule
+Mean & 0.103 & 0.146 & 0.249 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{Why not use the Cross-Encoder on every passage?}
+The Cross-Encoder must read the question together with each passage, so scoring all 707 passages for every question would cost much more than scoring ten. The Bi-Encoder lets me embed passages once and use FAISS to narrow the search quickly. The cost of that shortcut is visible in the ability question: if a needed passage is missing from the first ten, reranking cannot recover it.
+
+\section*{Conclusion and limits}
+In these four questions, reranking recovered the full required rule set in two cases and clearly improved the final answer in one. It added about 0.146 seconds of retrieval time per question on average. This is a small, hand-picked set, so the numbers describe this run rather than general performance on Magic questions. The target-rule check is stricter than answer correctness: the replacement/prevention baseline answered correctly through the glossary even without rule 615.1. I reviewed answers against the PDF separately from their retrieval ranks. A larger set of independently chosen questions would make the comparison more reliable.
+
+\section*{Reproducibility}
+The code is in \texttt{Magic\_RAG\_Assignment.ipynb}. It saves the parsed passages, run details, answers, and answer review under \texttt{corpus/}. The notebook downloads and verifies the rules PDF if it is not present locally. The repository README gives the run instructions.
+
+\end{document}
