@@ -1,0 +1,5 @@
+.venv/
+.ipynb_checkpoints/
+__pycache__/
+MagicCompRules_2026-09-25.pdf
+corpus/
