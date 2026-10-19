@@ -78,6 +78,6 @@ The Cross-Encoder must read the question together with each passage, so scoring 
 In these four questions, reranking recovered the full required rule set in two cases and clearly improved the final answer in one. It added about 0.146 seconds of retrieval time per question on average. This is a small, hand-picked set, so the numbers describe this run rather than general performance on Magic questions. The target-rule check is stricter than answer correctness: the replacement/prevention baseline answered correctly through the glossary even without rule 615.1. I reviewed answers against the PDF separately from their retrieval ranks. A larger set of independently chosen questions would make the comparison more reliable.
 
 \section*{Reproducibility}
-The code is in \texttt{Magic\_RAG\_Assignment.ipynb}. It saves the parsed passages, run details, answers, and answer review under \texttt{corpus/}. The notebook downloads and verifies the rules PDF if it is not present locally. The repository README gives the run instructions.
+The code is in \texttt{Magic\_RAG\_Assignment.ipynb} at \url{https://github.com/tanishaupad/lma_assignment_1}. It saves the parsed passages, run details, answers, and answer review under \texttt{corpus/}. The notebook downloads and verifies the rules PDF if it is not present locally. The repository README gives the run instructions.
 
 \end{document}
