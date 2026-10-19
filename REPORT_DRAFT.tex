@@ -26,7 +26,7 @@ I built a question-answering system using the September 25, 2026 edition of the 
 \section*{Architecture comparison}
 I extracted the numbered rules and glossary from the 312-page PDF, leaving out the introduction, contents, and credits. I kept rule numbers and PDF page numbers so that I could check each answer. Rules were grouped within their sections into passages small enough for both retrieval models. This produced 707 passages: 598 rules passages and 109 glossary passages. The notebook checks that every numbered rule it parsed appears in at least one passage.
 
-I embedded the passages with \texttt{BAAI/bge-base-en-v1.5} and stored their vectors in a FAISS index. This Bi-Encoder processes the question and each passage independently. It compares their vectors with cosine similarity, implemented here as inner product on normalized vectors. Passage vectors are computed once, which makes the initial search fast. For each question, it returns ten candidates.
+I embedded the passages with \texttt{BAAI/bge-base-en-v1.5} and stored their vectors in a FAISS index. FAISS is a library for searching vectors: it finds the stored passage vectors most similar to a question vector. I used it to get the assignment's top ten candidates without comparing the question to every passage in Python. This Bi-Encoder processes the question and each passage independently. It compares their vectors with cosine similarity, implemented here as inner product on normalized vectors. Passage vectors are computed once, which makes later searches fast.
 
 The baseline sends the first three candidates to Gemini. The advanced path scores all ten question--passage pairs with \texttt{cross-encoder/ms-marco-MiniLM-L6-v2} and sends its top three to Gemini. A Cross-Encoder reads the question and passage together. Its joint attention can compare their words and conditions directly, but it has to run on every pair. Both paths use \texttt{gemini-3.5-flash-lite}. The prompt tells Gemini to answer only from the supplied passages and to say when they are insufficient.
 
@@ -54,7 +54,7 @@ Replacement versus prevention effects & Last required rule: 6 $\rightarrow$ 3 & 
 The activated-versus-triggered question shows a different limit. Rule 602.1, which defines activated abilities, was absent from the vector search's top ten. The Cross-Encoder moved rule 603.1 about triggered abilities to first place but could not add the missing rule. Answer 2 was therefore only partial. Reranking cannot repair a candidate set that lacks necessary evidence.
 
 \section*{Latency profiling}
-These times come from one notebook run, in seconds. Baseline time includes question embedding and FAISS search. Extra reranking time scores the ten pairs with the Cross-Encoder. Advanced time is the sum. Model loading, index building, and Gemini answer generation are excluded.
+These times come from one notebook run, in seconds. Baseline time includes question embedding and FAISS search. Extra reranking time scores the ten pairs with the Cross-Encoder. Advanced time is the sum. Model loading, index building, and Gemini answer generation are excluded. Embedding and indexing all 707 passages took 27.75 seconds once, before the questions were run; that setup time is separate from the per-question times below.
 
 \begin{center}
 \begin{tabular}{@{}lrrr@{}}
